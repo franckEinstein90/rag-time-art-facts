@@ -1,0 +1,36 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Pytest Watch",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "--group",
+                "dev",
+                "ptw",
+                "--runner",
+                "uv run --group dev pytest"
+            ],
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "streamlit_standalone_1: run",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "--with", "streamlit",
+                "--with", "httpx",
+                "streamlit",
+                "run",
+                "streamlit_standalone_1/app.py",
+                "--server.port", "8501"
+            ],
+            "isBackground": true,
+            "problemMatcher": []
+        }
+    ]
+}
