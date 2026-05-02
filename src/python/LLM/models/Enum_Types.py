@@ -16,6 +16,7 @@ class ServiceProvider(str, Enum):
 
 class ModelCapability(str, Enum):
     CHAT = "chat"
+    CHAT_STREAMING = "chat_streaming"
     COMPLETION = "completion"
     EMBEDDING = "embedding"
     IMAGE_INPUT = "image_input"

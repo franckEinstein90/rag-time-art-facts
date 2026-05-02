@@ -18,12 +18,29 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "fast_api_backend_1: dev server",
+            "name": "streamlit_frontend_one: app",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": [
+                "run",
+                "streamlit_frontend_one/app.py",
+                "--server.port", "8502"
+            ],
+            "jinja": true,
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "env": {
+                "BACKEND_URL": "http://127.0.0.1:8000"
+            }
+        },
+        {
+            "name": "fast_api_backend_one: dev server",
             "type": "debugpy",
             "request": "launch",
             "module": "uvicorn",
             "args": [
-                "fast_api_backend_1.main:app",
+                "fast_api_backend_one.main:app",
                 "--host", "127.0.0.1",
                 "--port", "8000",
                 "--reload"
@@ -34,14 +51,14 @@
             "envFile": "${workspaceFolder}/.env"
         },
         {
-            "name": "streamlit_standalone_cohere_chat: app",
+            "name": "streamlit_standalone_one: app",
             "type": "debugpy",
             "request": "launch",
-            "python": "${workspaceFolder}/streamlit_standalone_cohere_chat/.venv/bin/python",
+            "python": "${workspaceFolder}/streamlit_standalone_one/.venv/bin/python",
             "module": "streamlit",
             "args": [
                 "run",
-                "streamlit_standalone_cohere_chat/app.py",
+                "streamlit_standalone_one/app.py",
                 "--server.port", "8501"
             ],
             "jinja": true,
@@ -52,11 +69,54 @@
             "name": "scripts: cohere_test",
             "type": "debugpy",
             "request": "launch",
-            "python": "${workspaceFolder}/streamlit_standalone_cohere_chat/.venv/bin/python",
+            "python": "${workspaceFolder}/streamlit_standalone_one/.venv/bin/python",
             "program": "${workspaceFolder}/scripts/cohere_test.py",
             "envFile": "${workspaceFolder}/.env",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "scripts: open_ai_test",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}/streamlit_standalone_one/.venv/bin/python",
+            "program": "${workspaceFolder}/scripts/open_ai_test.py",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "scripts: system_prompt_test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/system_prompt_test.py",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "backend_one only",
+            "configurations": [
+                "fast_api_backend_one: dev server"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "frontend_one only",
+            "configurations": [
+                "streamlit_frontend_one: app"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "backend_one + frontend_one",
+            "configurations": [
+                "fast_api_backend_one: dev server",
+                "streamlit_frontend_one: app"
+            ],
+            "stopAll": true
         }
     ]
 }

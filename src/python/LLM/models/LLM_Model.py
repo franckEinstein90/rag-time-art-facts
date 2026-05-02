@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
@@ -13,7 +14,7 @@ from .Rate_Limits_Model import RateLimits
 from .Token_Limit_Model import TokenLimits
 from .Tokenizer_Config_Model import TokenizerConfig
 from .Usage_Stats_Model import UsageStats
-from ..types import SimpleChat, Stream, StreamingChat
+from ..types import Chat, ChatRequest, ChatResponse, SimpleChat, SimpleStreamingChat, Stream
 
 
 class LLMModel(BaseModel):
@@ -65,7 +66,7 @@ class LLMModel(BaseModel):
         exclude=True,
         repr=False,
     )
-    streaming_chat_function: StreamingChat | None = Field(
+    streaming_chat_function: SimpleStreamingChat | None = Field(
         default=None,
         exclude=True,
         repr=False,
@@ -149,24 +150,61 @@ class LLMModel(BaseModel):
         self.capability_functions.pop(capability, None)
         self.touch()
 
-    def register_chat(self, func: SimpleChat, *, allow_unsupported: bool = False) -> None:
+    def register_chat(self, func: SimpleChat | Chat, *, allow_unsupported: bool = False) -> None:
+        def _chat_adapter(payload: str | ChatRequest) -> str | ChatResponse:
+            if isinstance(payload, str):
+                try:
+                    result = func(payload)  # type: ignore[arg-type]
+                except (TypeError, KeyError, AttributeError):
+                    request: ChatRequest = {"message": payload}
+                    result = func(request)  # type: ignore[arg-type]
+
+                if isinstance(result, str):
+                    return result
+                if isinstance(result, dict):
+                    response = result.get("response")
+                    if isinstance(response, str):
+                        return response
+                raise TypeError(
+                    "Registered chat function must return a string for string input, or a ChatResponse with a string 'response' field."
+                )
+
+            if not isinstance(payload.get("message"), str):
+                raise TypeError("ChatRequest must contain a string 'message' field.")
+
+            try:
+                result = func(payload["message"])  # type: ignore[arg-type]
+            except (TypeError, KeyError, AttributeError):
+                result = func(payload)  # type: ignore[arg-type]
+
+            if isinstance(result, dict):
+                response = result.get("response")
+                duration = result.get("duration")
+                if isinstance(response, str) and isinstance(duration, (int, float)):
+                    return {"response": response, "duration": float(duration)}
+            if isinstance(result, str):
+                return {"response": result, "duration": 0.0}
+            raise TypeError(
+                "Registered chat function must return ChatResponse for ChatRequest input, or a string that can be adapted to ChatResponse."
+            )
+
         self.register_capability_function(
             ModelCapability.CHAT,
-            func,
+            _chat_adapter,
             allow_unsupported=allow_unsupported,
         )
 
     def register_streaming_chat(
         self,
-        func: StreamingChat,
+        func: SimpleStreamingChat,
         *,
         allow_unsupported: bool = False,
     ) -> None:
         if not callable(func):
             raise TypeError("func must be callable.")
-        if not allow_unsupported and not self.supports(ModelCapability.CHAT):
+        if not allow_unsupported and not self.supports(ModelCapability.CHAT_STREAMING):
             raise ValueError(
-                f"Cannot register function for unsupported capability: {ModelCapability.CHAT.value}."
+                f"Cannot register function for unsupported capability: {ModelCapability.CHAT_STREAMING.value}."
             )
         self.streaming_chat_function = func
         self.touch()
@@ -182,15 +220,37 @@ class LLMModel(BaseModel):
             )
         return func(*args, **kwargs)
 
-    def chat(self, prompt: str) -> str:
+    def chat(self, prompt: str | ChatRequest) -> str | ChatResponse:
+        started_at = perf_counter()
         result = self.execute_capability(ModelCapability.CHAT, prompt)
-        if not isinstance(result, str):
-            raise TypeError("Registered chat function must return a string.")
-        return result
+        elapsed = perf_counter() - started_at
+
+        if isinstance(prompt, str):
+            if isinstance(result, str):
+                return result
+            if isinstance(result, dict):
+                response = result.get("response")
+                if isinstance(response, str):
+                    return response
+            raise TypeError("Registered chat function must return a string for string input.")
+
+        if not isinstance(prompt.get("message"), str):
+            raise TypeError("ChatRequest must contain a string 'message' field.")
+        if isinstance(result, dict):
+            response = result.get("response")
+            if isinstance(response, str):
+                return {"response": response, "duration": elapsed}
+        if isinstance(result, str):
+            return {"response": result, "duration": elapsed}
+        raise TypeError(
+            "Registered chat function must return ChatResponse for ChatRequest input."
+        )
 
     def stream_chat(self, prompt: str) -> Stream:
-        if not self.supports(ModelCapability.CHAT):
-            raise ValueError(f"Model does not support capability: {ModelCapability.CHAT.value}.")
+        if not self.supports(ModelCapability.CHAT_STREAMING):
+            raise ValueError(
+                f"Model does not support capability: {ModelCapability.CHAT_STREAMING.value}."
+            )
         if self.streaming_chat_function is None:
             raise NotImplementedError("No streaming chat function registered.")
         return self.streaming_chat_function(prompt)

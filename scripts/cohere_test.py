@@ -1,10 +1,11 @@
 import os
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.python.LLM.types import SimpleChat, Stream, StreamingChat
+from src.python.LLM.types import SimpleChat, SimpleStreamingChat, Stream
 
 import cohere
 
@@ -19,6 +20,14 @@ from src.python.LLM.models import (
     TokenLimits,
 )
 from pydantic import SecretStr
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x1b\x07]*(?:\x07|\x1b\\))")
+
+
+def _sanitize_terminal_text(text: str) -> str:
+    # Prevent model output from injecting terminal control sequences.
+    return _ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 
 def _read_env_key(key: str) -> str | None:
@@ -48,6 +57,9 @@ api_key = _read_env_key("COHERE_API_KEY")
 if not api_key:
     raise EnvironmentError("COHERE_API_KEY is not set. Add it to your .env file.")
 
+# Reset terminal style in case a previous run left colors in a bad state.
+print("\x1b[0m", end="")
+
 command_a = LLMModel(
     model_id="command-a-03-2025",
     display_name="Cohere Command A (Mar 2025)",
@@ -55,6 +67,7 @@ command_a = LLMModel(
     execution_backend=ExecutionBackend.API,
     capabilities={
         ModelCapability.CHAT,
+        ModelCapability.CHAT_STREAMING,
         ModelCapability.FUNCTION_CALLING,
         ModelCapability.CODE,
     },
@@ -79,7 +92,7 @@ def _make_chat(key: str) -> SimpleChat:
 
     return chat
 
-def _make_streaming_chat(key: str) -> StreamingChat:
+def _make_streaming_chat(key: str) -> SimpleStreamingChat:
     try:
         _client = cohere.ClientV2(api_key=key)
     except Exception as exc:
@@ -120,7 +133,7 @@ def _make_streaming_chat(key: str) -> StreamingChat:
 test_cohere_chat = _make_chat(api_key)
 command_a.register_chat(test_cohere_chat)
 answer = command_a.chat("which cohere model is the fastest? ")
-print("Cohere response:", answer)
+print("Cohere response:", _sanitize_terminal_text(answer))
 
 
 #Testing streaming chat
@@ -130,7 +143,7 @@ print("Streaming response:", end=" ", flush=True)
 for chunk in answer:
     if chunk == "[END]":
         break
-    print(chunk, end="", flush=True)
+    print(_sanitize_terminal_text(chunk), end="", flush=True)
 print()
 
 

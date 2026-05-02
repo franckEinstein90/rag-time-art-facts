@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.env
+llm_models.db
+fast_api_backend_one/llm_models.db

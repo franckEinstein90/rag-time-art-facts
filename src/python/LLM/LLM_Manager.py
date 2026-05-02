@@ -29,6 +29,7 @@ class LLMManager:
 
     def __init__(self) -> None:
         self._models: dict[UUID, LLMModel] = {}
+        self._manager_model_id: UUID | None = None
 
     # ------------------------------------------------------------------
     # CRUD
@@ -49,6 +50,8 @@ class LLMManager:
         if model_id not in self._models:
             raise KeyError(f"No model with id={model_id}.")
         del self._models[model_id]
+        if self._manager_model_id == model_id:
+            self._manager_model_id = None
         return self
 
     def update(self, model: LLMModel) -> "LLMManager":
@@ -78,6 +81,42 @@ class LLMManager:
         """Return the first match for a model_id string, or None."""
         matches = self.get_by_model_id(model_id)
         return matches[0] if matches else None
+
+    # ------------------------------------------------------------------
+    # Manager model
+    # ------------------------------------------------------------------
+
+    @property
+    def manager_model_id(self) -> UUID | None:
+        """Internal UUID of the currently designated manager model, if any."""
+        return self._manager_model_id
+
+    @property
+    def manager_model(self) -> LLMModel | None:
+        """Return the designated manager model, or None when not set."""
+        if self._manager_model_id is None:
+            return None
+        return self._models.get(self._manager_model_id)
+
+    def set_manager(self, model_id: UUID) -> "LLMManager":
+        """Designate a registered model (by internal UUID) as the manager model."""
+        if model_id not in self._models:
+            raise KeyError(f"No model with id={model_id}.")
+        self._manager_model_id = model_id
+        return self
+
+    def set_manager_by_model_id(self, model_id: str) -> "LLMManager":
+        """Designate the first registered model matching model_id as manager."""
+        model = self.find_one(model_id)
+        if model is None:
+            raise KeyError(f"No model with model_id={model_id}.")
+        self._manager_model_id = model.id
+        return self
+
+    def clear_manager(self) -> "LLMManager":
+        """Remove manager model designation."""
+        self._manager_model_id = None
+        return self
 
     # ------------------------------------------------------------------
     # Filters
@@ -126,4 +165,7 @@ class LLMManager:
         return model_id in self._models
 
     def __repr__(self) -> str:
-        return f"<LLMManager models={len(self._models)}>"
+        return (
+            f"<LLMManager models={len(self._models)}"
+            f" manager_model_id={self._manager_model_id}>"
+        )

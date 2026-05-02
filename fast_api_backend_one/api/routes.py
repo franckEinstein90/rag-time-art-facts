@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
-from fast_api_backend_1.api.chat import chat_router
-from fast_api_backend_1.api.model import model_router
-from fast_api_backend_1.api.vectorize import vectorize_router
+from fast_api_backend_one.api.chat import chat_router
+from fast_api_backend_one.api.model import model_router
+from fast_api_backend_one.api.vectorize import vectorize_router
 
 router = APIRouter()
 router.include_router(chat_router)
