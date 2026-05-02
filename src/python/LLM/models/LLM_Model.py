@@ -13,6 +13,7 @@ from .Rate_Limits_Model import RateLimits
 from .Token_Limit_Model import TokenLimits
 from .Tokenizer_Config_Model import TokenizerConfig
 from .Usage_Stats_Model import UsageStats
+from ..types import SimpleChat, Stream, StreamingChat
 
 
 class LLMModel(BaseModel):
@@ -61,6 +62,11 @@ class LLMModel(BaseModel):
     # Runtime-provided handlers for capability-specific actions.
     capability_functions: dict[ModelCapability, Callable[..., Any]] = Field(
         default_factory=dict,
+        exclude=True,
+        repr=False,
+    )
+    streaming_chat_function: StreamingChat | None = Field(
+        default=None,
         exclude=True,
         repr=False,
     )
@@ -143,6 +149,28 @@ class LLMModel(BaseModel):
         self.capability_functions.pop(capability, None)
         self.touch()
 
+    def register_chat(self, func: SimpleChat, *, allow_unsupported: bool = False) -> None:
+        self.register_capability_function(
+            ModelCapability.CHAT,
+            func,
+            allow_unsupported=allow_unsupported,
+        )
+
+    def register_streaming_chat(
+        self,
+        func: StreamingChat,
+        *,
+        allow_unsupported: bool = False,
+    ) -> None:
+        if not callable(func):
+            raise TypeError("func must be callable.")
+        if not allow_unsupported and not self.supports(ModelCapability.CHAT):
+            raise ValueError(
+                f"Cannot register function for unsupported capability: {ModelCapability.CHAT.value}."
+            )
+        self.streaming_chat_function = func
+        self.touch()
+
     def execute_capability(self, capability: ModelCapability, *args: Any, **kwargs: Any) -> Any:
         capability = ModelCapability(capability)
         if not self.supports(capability):
@@ -153,6 +181,19 @@ class LLMModel(BaseModel):
                 f"No function registered for capability: {capability.value}."
             )
         return func(*args, **kwargs)
+
+    def chat(self, prompt: str) -> str:
+        result = self.execute_capability(ModelCapability.CHAT, prompt)
+        if not isinstance(result, str):
+            raise TypeError("Registered chat function must return a string.")
+        return result
+
+    def stream_chat(self, prompt: str) -> Stream:
+        if not self.supports(ModelCapability.CHAT):
+            raise ValueError(f"Model does not support capability: {ModelCapability.CHAT.value}.")
+        if self.streaming_chat_function is None:
+            raise NotImplementedError("No streaming chat function registered.")
+        return self.streaming_chat_function(prompt)
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)

@@ -34,19 +34,29 @@
             "envFile": "${workspaceFolder}/.env"
         },
         {
-            "name": "streamlit_standalone_1: app",
+            "name": "streamlit_standalone_cohere_chat: app",
             "type": "debugpy",
             "request": "launch",
-            "python": "${workspaceFolder}/streamlit_standalone_1/.venv/bin/python",
+            "python": "${workspaceFolder}/streamlit_standalone_cohere_chat/.venv/bin/python",
             "module": "streamlit",
             "args": [
                 "run",
-                "streamlit_standalone_1/app.py",
+                "streamlit_standalone_cohere_chat/app.py",
                 "--server.port", "8501"
             ],
             "jinja": true,
             "justMyCode": true,
             "console": "integratedTerminal"
+        },
+        {
+            "name": "scripts: cohere_test",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}/streamlit_standalone_cohere_chat/.venv/bin/python",
+            "program": "${workspaceFolder}/scripts/cohere_test.py",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }

@@ -6,5 +6,12 @@
     "python.testing.pytestArgs": [
         "tests"
     ],
-    "python.testing.autoTestDiscoverOnSaveEnabled": true
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "terminal.integrated.minimumContrastRatio": 7,
+    "workbench.colorCustomizations": {
+        "terminal.background": "#101010",
+        "terminal.foreground": "#E6E6E6",
+        "terminalCursor.foreground": "#E6E6E6",
+        "terminal.selectionBackground": "#264F78"
+    }
 }
