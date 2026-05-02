@@ -187,6 +187,45 @@ def test_execute_registered_capability_function() -> None:
     assert result == "echo:hello"
 
 
+def test_register_chat_allows_command_style_invocation() -> None:
+    model = build_gpt4o()
+
+    def chat_handler(prompt: str) -> str:
+        return f"chat:{prompt}"
+
+    model.register_chat(chat_handler)
+
+    assert model.chat("hello") == "chat:hello"
+
+
+def test_chat_requires_string_return_value() -> None:
+    model = build_gpt4o()
+
+    model.register_chat(lambda _: 123)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        model.chat("hello")
+
+
+def test_register_streaming_chat_allows_stream_invocation() -> None:
+    model = build_gpt4o()
+
+    def stream_handler(prompt: str):
+        yield "chunk:"
+        yield prompt
+
+    model.register_streaming_chat(stream_handler)
+
+    assert list(model.stream_chat("hello")) == ["chunk:", "hello"]
+
+
+def test_stream_chat_requires_registered_function() -> None:
+    model = build_gpt4o()
+
+    with pytest.raises(NotImplementedError):
+        list(model.stream_chat("hello"))
+
+
 def test_register_capability_function_rejects_unsupported_capability() -> None:
     model = build_embed()
 
