@@ -332,11 +332,10 @@ def _render_application_dialog() -> None:
 
 def render_start_application_section(jd_text: str, active_model: Any | None) -> None:
     st.divider()
-    st.markdown("**🚀 Start Application**")
 
     start_disabled = not jd_text.strip()
 
-    if st.button("Start application", key="btn_start_application", disabled=start_disabled):
+    if st.button("Start application", key="btn_start_application", disabled=start_disabled, use_container_width=True):
         if start_disabled:
             st.warning("Paste the application text first.")
             return

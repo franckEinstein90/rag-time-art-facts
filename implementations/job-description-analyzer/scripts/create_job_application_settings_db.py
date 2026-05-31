@@ -42,6 +42,18 @@ def create_job_application_settings_db(db_path: str | Path) -> Path:
             """,
             (str(Path.home()), datetime.now(timezone.utc).isoformat()),
         )
+        # Pre-seed user profile keys so the settings form always has entries to update.
+        for profile_key in (
+            "user.name",
+            "user.email",
+            "user.linkedin",
+            "user.github",
+            "user.phone",
+        ):
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, '', ?);",
+                (profile_key, datetime.now(timezone.utc).isoformat()),
+            )
         conn.commit()
 
     return path

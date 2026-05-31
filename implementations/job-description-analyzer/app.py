@@ -58,11 +58,16 @@ def _render_job_description_page() -> None:
 
 
 navigation = st.navigation(
-    [
-        st.Page(_render_job_description_page, title="Job Description Analyzer", icon="💼"),
-        st.Page("pages/1_Resume_Viewer.py", title="Resume Viewer", icon="📄"),
-        st.Page("pages/2_Application_Viewer.py", title="Application Viewer", icon="📁"),
-    ],
+    {
+        "": [
+            st.Page(_render_job_description_page, title="Job Description Analyzer", icon="💼"),
+            st.Page("pages/1_Resume_Viewer.py", title="Resume Viewer", icon="📄"),
+            st.Page("pages/2_Application_Viewer.py", title="Application Viewer", icon="📁"),
+        ],
+        " ": [
+            st.Page("pages/0_Settings.py", title="Settings", icon=":material/settings:"),
+        ],
+    },
     position="top",
 )
 
