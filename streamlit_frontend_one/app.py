@@ -164,7 +164,6 @@ st.set_page_config(
     layout="centered",
 )
 
-st.title("🎨 Rag Time Art Facts")
 
 try:
     models = _fetch_models()

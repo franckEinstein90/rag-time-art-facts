@@ -17,6 +17,7 @@ import cohere
 from openai import OpenAI
 from pydantic import SecretStr
 
+from src.python.utils import read_env_key 
 from src.python.LLM.LLM_Manager import LLMManager
 from src.python.LLM.models import (
     ConnectionConfig,
@@ -38,27 +39,6 @@ _ANSI_ESCAPE_RE = re.compile(
 )
 
 
-def _read_env_key(key: str) -> str | None:
-    value = os.getenv(key)
-    if value:
-        return value
-
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    if not env_path.exists():
-        return None
-
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, raw_val = line.split("=", 1)
-        if name.strip() != key:
-            continue
-        parsed = raw_val.strip().strip('"').strip("'")
-        if parsed:
-            os.environ[key] = parsed
-            return parsed
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -243,11 +223,11 @@ def build_llm_manager() -> LLMManager:
         create_llm_models_sqlite_db(sqlite_db_path)
         print(f"Created new SQLite database for LLM models at: {sqlite_db_path}")
 
-    cohere_key = _read_env_key("COHERE_API_KEY")
+    cohere_key = read_env_key("COHERE_API_KEY")
     if cohere_key:
         _register_cohere_command_a(manager, cohere_key)
 
-    openai_key = _read_env_key("OPENAI_API_KEY")
+    openai_key = read_env_key("OPENAI_API_KEY")
     if openai_key:
         _register_openai_gpt_4_1_mini(manager, openai_key)
         _register_openai_gpt_5_4_mini(manager, openai_key)

@@ -6,3 +6,6 @@ __pycache__/
 .env
 llm_models.db
 fast_api_backend_one/llm_models.db
+implementations/job-description-analyzer/.job_app_state.json
+implementations/job-description-analyzer/job_application_settings.sqlite3
+implementations/job-description-analyzer/prompts/create_resume_from_long_form_job_description_and_latex_template.txt
