@@ -19,6 +19,49 @@ from settings_db import load_user_profile  # noqa: E402
 from tools import TOOLS  # noqa: E402
 
 
+def _get_jd_meta_for_cl(jd_text: str, active_model) -> tuple[str, str]:
+    """Return (title, company) for the cover letter Re: line.
+
+    Prefers application_draft if already populated; otherwise asks the model
+    with a single cheap call and caches the result per JD.
+    """
+    draft = st.session_state.get("application_draft") or {}
+    title = draft.get("title", "").strip()
+    company = draft.get("company", "").strip()
+    if title and company:
+        return title, company
+
+    cached = st.session_state.get("_cl_meta_cache") or {}
+    if cached.get("jd_prefix") == jd_text[:120]:
+        return cached.get("title", ""), cached.get("company", "")
+
+    if active_model is None:
+        return "", ""
+
+    prompt = (
+        "From the job description below, extract exactly:\n"
+        "Job title: <title>\n"
+        "Company: <company name>\n\n"
+        "Return only those two lines and nothing else.\n\n"
+        + jd_text[:3000]
+    )
+    try:
+        response = "".join(active_model.stream_chat(prompt))
+        title_m = re.search(r"Job title:\s*(.+)", response, re.IGNORECASE)
+        company_m = re.search(r"Company:\s*(.+)", response, re.IGNORECASE)
+        title = title_m.group(1).strip().strip('*_"\'') if title_m else ""
+        company = company_m.group(1).strip().strip('*_"\'') if company_m else ""
+    except Exception:
+        title = company = ""
+
+    st.session_state["_cl_meta_cache"] = {
+        "jd_prefix": jd_text[:120],
+        "title": title,
+        "company": company,
+    }
+    return title, company
+
+
 def _clear_tool_cache(tool_id: str) -> None:
     result_key = f"result_{tool_id}"
     for suffix in ("", "_source", "_resume_fp", "_profile_fp", "_used_resume"):
@@ -185,7 +228,12 @@ def render_left_col(jd_text: str, active_model: LLMModel) -> None:
                         st.warning(f"⚠️ {rag_error}")
                     extra = {"user_profile": user_profile} if tool["id"] == "cover_letter" else {}
                     if tool["id"] == "cover_letter":
-                        cl_header, cl_footer = cover_letter_envelope(user_profile)
+                        _cl_title, _cl_company = _get_jd_meta_for_cl(jd_text, active_model)
+                        cl_header, cl_footer = cover_letter_envelope(
+                            user_profile,
+                            title=_cl_title,
+                            company=_cl_company,
+                        )
                     else:
                         cl_header = cl_footer = ""
                     _stream_into_placeholder(

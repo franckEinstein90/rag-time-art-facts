@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
+
+from tools import TOOLS
+from settings_db import load_user_profile
 
 _STATE_FILE = Path(__file__).resolve().parent / ".job_app_state.json"
+_LATEX_TEMPLATE = Path(__file__).resolve().parent / "resume_templates" / "latex" / "template1.tex"
 
 
 def _to_win_path(wsl_path: str) -> str:
@@ -56,29 +64,82 @@ def _pick_folder(initial_dir: str) -> str | None:
 
 _INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1F]')
 _RESERVED_NAMES = {
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    "COM1",
-    "COM2",
-    "COM3",
-    "COM4",
-    "COM5",
-    "COM6",
-    "COM7",
-    "COM8",
-    "COM9",
-    "LPT1",
-    "LPT2",
-    "LPT3",
-    "LPT4",
-    "LPT5",
-    "LPT6",
-    "LPT7",
-    "LPT8",
-    "LPT9",
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 }
+
+_EMOJI_RE = re.compile(
+    r"["
+    r"\U0001F300-\U0001FFFF"
+    r"\U00002700-\U000027BF"
+    r"\u2600-\u26FF"
+    r"]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_emoji(text: str) -> str:
+    return _EMOJI_RE.sub("", text).strip()
+
+
+def _save_analysis_docs(folder: Path, company: str = "", applicant_name: str = "") -> None:
+    """Write each tool's cached result as a .docx file in the application folder."""
+    import streamlit as st  # local import to keep module-level imports clean
+
+    today = date.today()
+
+    for tool in TOOLS:
+        content: str = st.session_state.get(f"result_{tool['id']}", "").strip()
+        if not content:
+            continue
+
+        heading = _strip_emoji(tool["label"])
+
+        if tool["id"] == "cover_letter" and company:
+            safe_company = _sanitize_windows_name(company, "Company")
+            # Replace spaces with underscores in applicant name for the filename
+            raw_name = _sanitize_windows_name(applicant_name, "Applicant") if applicant_name else "Applicant"
+            safe_name = raw_name.replace(" ", "_")
+            month_name = today.strftime("%B")  # e.g. "May"
+            year = today.strftime("%Y")
+            safe_filename = f"{safe_company}_{safe_name}_{month_name}_{year}_COVER_LETTER"
+            heading = ""  # no document title for cover letter
+        elif tool["id"] == "requirements" and company:
+            safe_company = _sanitize_windows_name(company, "Company")
+            safe_name = _sanitize_windows_name(applicant_name, "Applicant") if applicant_name else "Applicant"
+            month_name = today.strftime("%B")
+            year = today.strftime("%Y")
+            safe_filename = f"{safe_company}_{safe_name}_Technical_Requirement_Ledger_{month_name}_{year}"
+            heading = "Technical Requirements Accounting"
+        else:
+            safe_filename = re.sub(r'[<>:"/\\|?*]', "", heading).strip()
+        file_path = folder / f"{safe_filename}.docx"
+
+        doc = Document()
+        if heading:
+            doc.add_heading(heading, level=1)
+        # Split on double-newlines to preserve paragraph breaks
+        for para in content.split("\n\n"):
+            para = para.strip()
+            if not para:
+                continue
+            # Markdown bold (**text**) and italic (*text*) → styled runs
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(6)
+            p.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            segments = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*)", para)
+            for seg in segments:
+                if seg.startswith("**") and seg.endswith("**"):
+                    run = p.add_run(seg[2:-2])
+                    run.bold = True
+                elif seg.startswith("*") and seg.endswith("*"):
+                    run = p.add_run(seg[1:-1])
+                    run.italic = True
+                else:
+                    p.add_run(seg)
+
+        doc.save(file_path)
 
 
 def _load_last_base_path() -> str:
@@ -235,7 +296,7 @@ def _extract_application_metadata(jd_text: str, active_model: Any | None) -> tup
     if not company:
         return None, "Metadata extraction failed: the model did not return a parsable company name."
     if posted_on is None:
-        return None, "Metadata extraction failed: the model did not return a parsable posting date in YYYY-MM-DD format."
+        posted_on = date.today()
 
     return (
         {
@@ -321,6 +382,10 @@ def _render_application_dialog() -> None:
             folder_name = _build_folder_name(title, company, status, posted_on)
             created = _create_unique_folder(base, folder_name)
             _save_application_files(created, source_text, source_url, title, company, posted_on, status)
+            applicant_name = load_user_profile().get("user.name", "")
+            _save_analysis_docs(created, company=company, applicant_name=applicant_name)
+            if _LATEX_TEMPLATE.exists():
+                shutil.copy2(_LATEX_TEMPLATE, created / _LATEX_TEMPLATE.name)
             _save_last_base_path(str(base))
             st.session_state["created_application_path"] = str(created)
             _close_application_dialog()

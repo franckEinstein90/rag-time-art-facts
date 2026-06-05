@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 _JD_PREAMBLE = (
     "Respond directly and concisely — do not start with phrases like 'Certainly!', "
     "'Great question', 'Sure!', 'Of course', 'Thank you', or any similar filler. "
@@ -43,19 +45,31 @@ def prompt_summary(jd: str, resume_context: str | None = None) -> str:
 
 
 def prompt_requirements(jd: str, resume_context: str | None = None) -> str:
-    return (
-        _preamble(jd)
-        + _resume_section(resume_context)
-        + "Extract and categorize all requirements from this job description. "
-        "Present two separate bullet lists:\n"
-        "**Must-have** — explicitly required or listed as mandatory.\n"
-        "**Nice-to-have** — preferred, a plus, or desirable."
+    recruiter_framing = (
+        "You are writing a technical requirements accounting document addressed to the recruiter. "
+        "Start with a short introductory paragraph (2–3 sentences) that summarises how your "
+        "overall profile aligns with the role — speak in first person ('I', 'my'). "
+        "Then produce exactly two sections:\n\n"
+        "## Must-Have\n"
+        "Bullet list of every explicitly required or mandatory requirement from the job description."
         + (
-            "\n\nFor each requirement, note in parentheses whether the resume excerpts "
-            "show evidence you meet it (\u2705 met / \u26a0\ufe0f partial / \u274c not evident)."
+            " For each bullet, add a brief parenthetical noting your evidence "
+            "(\u2705 met / \u26a0\ufe0f partial / \u274c not evident) based on the resume."
             if resume_context
             else ""
         )
+        + "\n\n## Nice-to-Have\n"
+        "Bullet list of every preferred, desirable, or 'a plus' requirement."
+        + (
+            " Same evidence notation as above."
+            if resume_context
+            else ""
+        )
+    )
+    return (
+        _preamble(jd)
+        + _resume_section(resume_context)
+        + recruiter_framing
     )
 
 
@@ -109,7 +123,21 @@ def prompt_interview_prep(jd: str, resume_context: str | None = None) -> str:
     )
 
 
-def cover_letter_envelope(user_profile: dict[str, str] | None) -> tuple[str, str]:
+def _format_phone(raw: str) -> str:
+    """Format a raw phone string to a human-readable number."""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 11 and digits[0] == "1":
+        return f"+1 ({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return raw  # unrecognised format — return as-is
+
+
+def cover_letter_envelope(
+    user_profile: dict[str, str] | None,
+    title: str = "",
+    company: str = "",
+) -> tuple[str, str]:
     """Return (header, footer) composed entirely in Python from settings.
 
     The LLM never sees or writes these — we build them here so no placeholder
@@ -118,17 +146,21 @@ def cover_letter_envelope(user_profile: dict[str, str] | None) -> tuple[str, str
     p = user_profile or {}
     name  = p.get("user.name")  or "[Your Name]"
     email = p.get("user.email") or "[Your Email]"
-    phone = p.get("user.phone") or ""
-    linkedin = p.get("user.linkedin") or ""
-    github   = p.get("user.github")   or ""
+    raw_phone = p.get("user.phone") or ""
+    phone = _format_phone(raw_phone) if raw_phone else ""
 
-    contact_parts = [email]
-    if phone:    contact_parts.append(phone)
-    if linkedin: contact_parts.append(linkedin)
-    if github:   contact_parts.append(github)
+    re_position = title.strip() or "[Position]"
+    re_company  = company.strip() or "[Company]"
 
-    header = f"{name}\n" + "  \n".join(contact_parts) + "\n\n---\n\n"
-    footer = "\n\n---\n\nSincerely,  \n" + name
+    contact_lines = [name, email]
+    if phone:
+        contact_lines.append(phone)
+
+    header = (
+        "\n".join(f"*{line}*" for line in contact_lines)
+        + f"\n\n*Re: {re_position} at {re_company}*\n\n"
+    )
+    footer = "\n\nSincerely,  \n" + name
     return header, footer
 
 
