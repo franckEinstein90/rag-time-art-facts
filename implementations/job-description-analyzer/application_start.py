@@ -18,6 +18,14 @@ from settings_db import load_user_profile
 
 _STATE_FILE = Path(__file__).resolve().parent / ".job_app_state.json"
 _LATEX_TEMPLATE = Path(__file__).resolve().parent / "resume_templates" / "latex" / "template1.tex"
+_LATEX_RESUME_PROMPT = (
+    Path(__file__).resolve().parent
+    / "prompts"
+    / "create_resume_from_long_form_job_description_and_latex_template.txt"
+)
+_LONG_FORM_RESUME_WIN_PATH = (
+    r"C:\Users\Franck\OneDrive\07 - Professional\02 - Finding Jobs\long rambling resume.docx"
+)
 
 
 def _to_win_path(wsl_path: str) -> str:
@@ -83,6 +91,16 @@ def _strip_emoji(text: str) -> str:
     return _EMOJI_RE.sub("", text).strip()
 
 
+def _application_filename_stem(company: str, applicant_name: str, suffix: str) -> str:
+    safe_company = _sanitize_windows_name(company, "Company")
+    raw_name = _sanitize_windows_name(applicant_name, "Applicant") if applicant_name else "Applicant"
+    safe_name = raw_name.replace(" ", "_")
+    today = date.today()
+    month_name = today.strftime("%B")
+    year = today.strftime("%Y")
+    return f"{safe_company}_{safe_name}_{month_name}_{year}_{suffix}"
+
+
 def _save_analysis_docs(folder: Path, company: str = "", applicant_name: str = "") -> None:
     """Write each tool's cached result as a .docx file in the application folder."""
     import streamlit as st  # local import to keep module-level imports clean
@@ -97,13 +115,7 @@ def _save_analysis_docs(folder: Path, company: str = "", applicant_name: str = "
         heading = _strip_emoji(tool["label"])
 
         if tool["id"] == "cover_letter" and company:
-            safe_company = _sanitize_windows_name(company, "Company")
-            # Replace spaces with underscores in applicant name for the filename
-            raw_name = _sanitize_windows_name(applicant_name, "Applicant") if applicant_name else "Applicant"
-            safe_name = raw_name.replace(" ", "_")
-            month_name = today.strftime("%B")  # e.g. "May"
-            year = today.strftime("%Y")
-            safe_filename = f"{safe_company}_{safe_name}_{month_name}_{year}_COVER_LETTER"
+            safe_filename = _application_filename_stem(company, applicant_name, "COVER_LETTER")
             heading = ""  # no document title for cover letter
         elif tool["id"] == "requirements" and company:
             safe_company = _sanitize_windows_name(company, "Company")
@@ -140,6 +152,169 @@ def _save_analysis_docs(folder: Path, company: str = "", applicant_name: str = "
                     p.add_run(seg)
 
         doc.save(file_path)
+
+
+def _long_form_resume_path() -> Path:
+    converted = _to_wsl_path(_LONG_FORM_RESUME_WIN_PATH)
+    return Path(converted or _LONG_FORM_RESUME_WIN_PATH)
+
+
+def _read_long_form_resume_text() -> str:
+    resume_path = _long_form_resume_path()
+    if not resume_path.exists():
+        raise FileNotFoundError(f"Long form resume not found: {resume_path}")
+
+    doc = Document(str(resume_path))
+    parts: list[str] = []
+    for paragraph in doc.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            parts.append(text)
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if cells:
+                parts.append(" | ".join(cells))
+
+    resume_text = "\n\n".join(parts).strip()
+    if not resume_text:
+        raise ValueError(f"Long form resume was empty after extraction: {resume_path}")
+    return resume_text
+
+
+def _strip_markdown_code_fence(text: str) -> str:
+    cleaned = text.strip()
+    fence_match = re.search(r"```(?:latex|tex)?\s*(.*?)```", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+    return cleaned
+
+
+def _build_custom_resume_prompt(jd_text: str, long_form_resume: str, latex_template: str) -> str:
+    base_prompt = _LATEX_RESUME_PROMPT.read_text(encoding="utf-8")
+    return (
+        base_prompt.strip()
+        + "\n\nReturn only the complete LaTeX source code. Do not wrap it in Markdown fences, "
+        "do not include commentary, and preserve the template's custom commands where useful.\n\n"
+        "LONG FORM RESUME:\n"
+        "-----\n"
+        f"{long_form_resume}\n"
+        "-----\n\n"
+        "JOB DESCRIPTION:\n"
+        "-----\n"
+        f"{jd_text}\n"
+        "-----\n\n"
+        "LATEX TEMPLATE:\n"
+        "-----\n"
+        f"{latex_template}\n"
+        "-----\n"
+    )
+
+
+def _latex_command(tex_path: Path) -> tuple[list[str] | None, str]:
+    candidates = ("latexmk", "tectonic", "pdflatex", "xelatex")
+    for name in candidates:
+        engine = shutil.which(name)
+        if engine is None:
+            continue
+        if name == "latexmk":
+            return (
+                [
+                    engine,
+                    "-pdf",
+                    "-interaction=nonstopmode",
+                    "-halt-on-error",
+                    tex_path.name,
+                ],
+                name,
+            )
+        if name == "tectonic":
+            return ([engine, tex_path.name], name)
+        return (
+            [
+                engine,
+                "-interaction=nonstopmode",
+                "-halt-on-error",
+                tex_path.name,
+            ],
+            name,
+        )
+    return None, ", ".join(candidates)
+
+
+def _compile_latex_resume(tex_path: Path) -> tuple[Path | None, str | None]:
+    command, searched = _latex_command(tex_path)
+    if command is None:
+        return (
+            None,
+            "No LaTeX engine found. Install one of these and ensure it is on the PATH used by Streamlit: "
+            f"{searched}.",
+        )
+
+    combined_output = ""
+    runs = 1 if Path(command[0]).name.startswith(("latexmk", "tectonic")) else 2
+    for _ in range(runs):
+        result = subprocess.run(
+            command,
+            cwd=tex_path.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+        )
+        combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+        if result.returncode != 0:
+            return None, combined_output.strip() or f"{Path(command[0]).name} failed with exit code {result.returncode}."
+
+    pdf_path = tex_path.with_suffix(".pdf")
+    if pdf_path.exists():
+        for suffix in (".aux", ".log", ".out"):
+            scratch_path = tex_path.with_suffix(suffix)
+            if scratch_path.exists():
+                scratch_path.unlink()
+        return pdf_path, None
+    return None, combined_output.strip() or "LaTeX finished without producing a PDF."
+
+
+def _save_custom_resume_files(
+    folder: Path,
+    jd_text: str,
+    company: str,
+    applicant_name: str,
+    active_model: Any | None,
+) -> None:
+    """Generate a tailored LaTeX resume and compile a PDF when possible."""
+    stem = _application_filename_stem(company, applicant_name, "RESUME")
+    tex_path = folder / f"{stem}.tex"
+    log_path = folder / f"{stem}_BUILD_LOG.txt"
+
+    if active_model is None:
+        log_path.write_text("No active model is available for resume generation.", encoding="utf-8")
+        return
+    if not _LATEX_TEMPLATE.exists():
+        log_path.write_text(f"LaTeX template not found: {_LATEX_TEMPLATE}", encoding="utf-8")
+        return
+    if not _LATEX_RESUME_PROMPT.exists():
+        log_path.write_text(f"Resume generation prompt not found: {_LATEX_RESUME_PROMPT}", encoding="utf-8")
+        return
+
+    try:
+        long_form_resume = _read_long_form_resume_text()
+        latex_template = _LATEX_TEMPLATE.read_text(encoding="utf-8")
+        prompt = _build_custom_resume_prompt(jd_text, long_form_resume, latex_template)
+        generated = "".join(active_model.stream_chat(prompt))
+        latex_source = _strip_markdown_code_fence(generated)
+        if "\\documentclass" not in latex_source or "\\begin{document}" not in latex_source:
+            raise ValueError("The model response did not look like a complete LaTeX document.")
+        tex_path.write_text(latex_source, encoding="utf-8")
+
+        _pdf_path, compile_error = _compile_latex_resume(tex_path)
+        if compile_error:
+            log_path.write_text(compile_error, encoding="utf-8")
+        elif log_path.exists():
+            log_path.unlink()
+    except Exception as exc:
+        log_path.write_text(f"Custom resume generation failed: {exc}", encoding="utf-8")
 
 
 def _load_last_base_path() -> str:
@@ -331,7 +506,7 @@ def _close_application_dialog() -> None:
 
 
 @st.dialog("Start application", width="large", icon="🚀", on_dismiss=_close_application_dialog)
-def _render_application_dialog() -> None:
+def _render_application_dialog(active_model: Any | None = None) -> None:
     draft = st.session_state.get("application_draft", _default_draft())
     st.write("Review the extracted metadata and adjust it before creating the folder.")
 
@@ -384,8 +559,8 @@ def _render_application_dialog() -> None:
             _save_application_files(created, source_text, source_url, title, company, posted_on, status)
             applicant_name = load_user_profile().get("user.name", "")
             _save_analysis_docs(created, company=company, applicant_name=applicant_name)
-            if _LATEX_TEMPLATE.exists():
-                shutil.copy2(_LATEX_TEMPLATE, created / _LATEX_TEMPLATE.name)
+            with st.spinner("Generating tailored resume..."):
+                _save_custom_resume_files(created, source_text, company, applicant_name, active_model)
             _save_last_base_path(str(base))
             st.session_state["created_application_path"] = str(created)
             _close_application_dialog()
@@ -414,4 +589,4 @@ def render_start_application_section(jd_text: str, active_model: Any | None) -> 
         st.caption(f"Latest application folder: {created}")
 
     if st.session_state.get("application_dialog_open"):
-        _render_application_dialog()
+        _render_application_dialog(active_model)
